@@ -2,7 +2,7 @@
 
 **Project:** Student Performance Predictor
 **Course:** Secure Software Engineering
-**Group:** [Group name] | **Members:** [Name 1], [Name 2], [Name 3], [Name 4]
+**Group:**| **Members:** [Anand], [Rupesh]
 **Version:** 1.0 (draft) | **Date:** 18 November 2026
 **Branch:** secure-se-improvements
 
