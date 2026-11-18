@@ -12,7 +12,7 @@ A web app that predicts a student's **semester exam score (out of 100)** from in
 > **Note:** The dataset is **synthetic** (generated with a script, 300 students). The model and code are real, and the project can be retrained on real anonymized class data.
 
 ## 🔗 Live demo
-[Open the app](https://your-app-link.streamlit.app) *(replace this with your Streamlit link after deploying)*
+[Open the live app](https://student-performance-predictor-ikfmobibhjf9wpqhzflr95.streamlit.app/)
 
 ## ✨ Features
 - **Prediction:** linear regression model trained with scikit-learn
