@@ -94,4 +94,4 @@ student-performance-predictor/
 
 ## 👤 Author
 **Rupesh Holkar**
-GitHub: [rupeshholkar27-cell](https://github.com/rup
+GitHub: [rupeshholkar27-cell](https://github.com/rupeshholkar27-cell)
