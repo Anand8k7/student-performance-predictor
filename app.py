@@ -14,7 +14,7 @@ st.title("🎓 Student Performance Predictor")
 FRIENDLY_ERROR = "Something went wrong. Please try again later."
 
 
-# ---------- Login helpers ----------
+# --------- Login helpers ----------
 @st.cache_resource
 def get_throttle():
     return LoginThrottle()
