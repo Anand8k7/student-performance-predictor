@@ -2,11 +2,87 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 from analysis import load_data, summary, correlations
-from predictor import train_model, predict_score
+from predictor import predict_score
+from auth import authenticate, load_users, LoginThrottle, ROLES, safe_for_log
+from logger_config import get_logger
+
+logger = get_logger("app")
 
 st.set_page_config(page_title="Student Performance Predictor")
 st.title("🎓 Student Performance Predictor")
-st.write("Predict the **semester exam score (out of 100)** from internal marks, assignment, study hours and attendance.")
+
+
+# ---------- Login helpers ----------
+@st.cache_resource
+def get_throttle():
+    # One shared counter for all visitors, so lockouts work across sessions.
+    return LoginThrottle()
+
+
+def get_configured_users():
+    # Accounts come only from Streamlit Secrets. Any problem means no accounts.
+    try:
+        raw = st.secrets.get("users", {})
+        raw = {str(name): info for name, info in raw.items()}
+    except Exception:
+        logger.error("Account settings could not be read")
+        return {}
+    return load_users(raw)
+
+
+def end_session():
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+
+
+def show_login_page(users):
+    st.subheader("🔐 Please log in")
+    if not users:
+        st.error("Login is not set up yet. Please contact the administrator.")
+        st.stop()
+
+    username = st.text_input("Username", key="login_username", max_chars=64)
+    password = st.text_input("Password", type="password",
+                             key="login_password", max_chars=128)
+
+    if st.button("Log in", key="login_button"):
+        role, message = authenticate(username, password, users, get_throttle())
+        if role is not None:
+            end_session()
+            st.session_state["username"] = username.strip().lower()
+            st.session_state["role"] = role
+            st.rerun()
+        else:
+            st.error(message)
+    st.stop()
+
+
+# ---------- Login check on EVERY page run ----------
+users = get_configured_users()
+current_user = st.session_state.get("username")
+current_role = st.session_state.get("role")
+
+logged_in = (
+    current_role in ROLES
+    and current_user in users
+    and users[current_user]["role"] == current_role
+)
+if not logged_in:
+    st.session_state.pop("username", None)
+    st.session_state.pop("role", None)
+    show_login_page(users)   # this stops the page here
+
+# ---------- Sidebar: who is logged in, and logout ----------
+with st.sidebar:
+    st.markdown(f"Logged in as **{current_user}** ({current_role})")
+    if st.button("Log out", key="logout_button"):
+        logger.info("Logout for user '%s'", safe_for_log(current_user))
+        end_session()
+        st.rerun()
+
+# ---------- The app (only reached after a successful login) ----------
+st.write("Predict the **semester exam score (out of 100)** from internal marks, "
+         "assignment, study hours and attendance.")
 
 df = load_data()
 
@@ -51,7 +127,7 @@ with tab2:
     st.subheader("Class summary")
     st.dataframe(summary(df))
 
-# ---------- Tab 3: Data ----------
+# ---------- Tab 3: Data (restricted to Admin in Task 9) ----------
 with tab3:
     st.subheader("All students")
     st.dataframe(df)
