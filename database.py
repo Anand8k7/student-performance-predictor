@@ -49,7 +49,7 @@ class Database:
         try:
             with conn:
                 conn.execute(INSERT_SQL, student.to_tuple())
-            logger.info(f"Added student: {student.name}")
+                     logger.info("Added one student record")
         except sqlite3.Error as e:
             logger.error(f"Database error while adding student: {e}")
             raise
