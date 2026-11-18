@@ -8,6 +8,7 @@ from sklearn.metrics import r2_score, mean_absolute_error
 
 from analysis import load_data
 from logger_config import get_logger
+from models import Student
 
 logger = get_logger("predictor")
 
@@ -40,11 +41,16 @@ def train_model():
 
 
 def predict_score(study_hours, attendance, internal1, internal2, assignment):
+    # Check every value with the same rules used everywhere else.
+    checked = Student("prediction", study_hours, attendance,
+                      internal1, internal2, assignment)
+
     if not os.path.exists(MODEL_PATH):
         train_model()
     model = joblib.load(MODEL_PATH)
     values = pd.DataFrame(
-        [[study_hours, attendance, internal1, internal2, assignment]],
+        [[checked.study_hours, checked.attendance, checked.internal1,
+          checked.internal2, checked.assignment]],
         columns=FEATURES
     )
     result = model.predict(values)[0]
