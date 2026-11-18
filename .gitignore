@@ -1,4 +1,36 @@
+# Python virtual environments
 venv/
+.venv/
+env/
+
+# Python cache files
 __pycache__/
+*.pyc
+
+# Databases (contain data, never upload)
 *.db
+*.sqlite
+*.sqlite3
+
+# Log files (may contain private details)
 *.log
+
+# Secrets and passwords (NEVER upload)
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+secrets.toml
+*.pem
+*.key
+
+# Test and coverage leftovers
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor and system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
