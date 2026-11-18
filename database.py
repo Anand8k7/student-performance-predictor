@@ -44,12 +44,12 @@ class Database:
         finally:
             conn.close()
 
-    def add_student(self, student):
+        def add_student(self, student):
         conn = self._connect()
         try:
             with conn:
                 conn.execute(INSERT_SQL, student.to_tuple())
-                     logger.info("Added one student record")
+            logger.info("Added one student record")
         except sqlite3.Error as e:
             logger.error(f"Database error while adding student: {e}")
             raise
