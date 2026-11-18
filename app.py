@@ -122,4 +122,28 @@ with tabs[0]:
 
 # ---------- Tab 2: Insights ----------
 with tabs[1]:
-    st.subheader("What affects
+        st.subheader("What affects the semester score?")
+    corr = correlations(df)
+    fig, ax = plt.subplots()
+    corr.plot(kind="barh", ax=ax)
+    ax.set_xlabel("Correlation with semester score")
+    st.pyplot(fig)
+
+    st.subheader("Score distribution")
+    fig2, ax2 = plt.subplots()
+    ax2.hist(df["semester_score"], bins=15)
+    ax2.set_xlabel("Semester score")
+    ax2.set_ylabel("Number of students")
+    st.pyplot(fig2)
+
+    st.subheader("Class summary")
+    st.dataframe(summary(df))
+
+# ---------- Tab 3: Data (Admin only, checked in code) ----------
+if is_admin:
+    with tabs[2]:
+        st.subheader("All students")
+        st.dataframe(df)
+        st.download_button("Download data as CSV",
+                           df.to_csv(index=False),
+                           file_name="students.csv")
