@@ -167,8 +167,7 @@ class LoginThrottle:
 
 def authenticate(username, password, users, throttle=None):
     """Check a login. Returns (role, message). The role is None on failure."""
-    key = normalize_username(username)
-
+    who = safe_for_log(key) if key in users else "(unknown username)"
     if throttle is not None:
         wait = throttle.seconds_locked(key)
         if wait > 0:
