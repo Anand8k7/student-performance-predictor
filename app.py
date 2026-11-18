@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 
 from analysis import load_data, summary, correlations
 from predictor import predict_score
-from auth import authenticate, load_users, LoginThrottle, ROLES, ROLE_ADMIN, safe_for_log
+from auth import (authenticate, load_users, LoginThrottle,
+                  ROLES, ROLE_ADMIN, safe_for_log)
 from logger_config import get_logger
 
 logger = get_logger("app")
@@ -14,13 +15,15 @@ st.title("🎓 Student Performance Predictor")
 FRIENDLY_ERROR = "Something went wrong. Please try again later."
 
 
-# --------- Login helpers ----------
+# ---------- Login helpers ----------
 @st.cache_resource
 def get_throttle():
+    # One shared counter for all visitors, so lockouts work across sessions.
     return LoginThrottle()
 
 
 def get_configured_users():
+    # Accounts come only from Streamlit Secrets. Any problem means no accounts.
     try:
         raw = st.secrets.get("users", {})
         raw = {str(name): info for name, info in raw.items()}
@@ -70,10 +73,11 @@ logged_in = (
 if not logged_in:
     st.session_state.pop("username", None)
     st.session_state.pop("role", None)
-    show_login_page(users)
+    show_login_page(users)   # this stops the page here
 
 is_admin = current_role == ROLE_ADMIN
 
+# ---------- Sidebar: who is logged in, and logout ----------
 with st.sidebar:
     st.markdown(f"Logged in as **{current_user}** ({current_role})")
     if st.button("Log out", key="logout_button"):
@@ -81,7 +85,7 @@ with st.sidebar:
         end_session()
         st.rerun()
 
-# ---------- The app ----------
+# ---------- The app (only reached after a successful login) ----------
 st.write("Predict the **semester exam score (out of 100)** from internal marks, "
          "assignment, study hours and attendance.")
 
