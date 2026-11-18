@@ -122,7 +122,7 @@ with tabs[0]:
 
 # ---------- Tab 2: Insights ----------
 with tabs[1]:
-        st.subheader("What affects the semester score?")
+    st.subheader("What affects the semester score?")
     corr = correlations(df)
     fig, ax = plt.subplots()
     corr.plot(kind="barh", ax=ax)
