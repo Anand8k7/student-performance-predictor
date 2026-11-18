@@ -44,7 +44,7 @@ class Database:
         finally:
             conn.close()
 
-        def add_student(self, student):
+    def add_student(self, student):
         conn = self._connect()
         try:
             with conn:
