@@ -106,7 +106,29 @@ def lookup(ip):
     return UNKNOWN
 
 
-def describe():
-    """Return (location text, masked IP) for the current visitor."""
+def from_browser(value):
+    """Validate the location reported by the visitor's browser component."""
+    if not isinstance(value, dict) or value.get("error"):
+        return None
+    parts = [_clean(value.get(k)) for k in ("city", "region", "country")]
+    parts = [p for p in parts if p]
+    if not parts:
+        return None
+    return ", ".join(parts), parse_ip(value.get("ip"))
+
+
+def describe(browser_value=None):
+    """Return (location text, masked IP) for the current visitor.
+    Server-side IP first; on hosts that hide it, use the browser's report."""
     ip = client_ip()
-    return lookup(ip), mask_ip(ip)
+    if ip:
+        location = lookup(ip)
+        if location != UNKNOWN:
+            return location, mask_ip(ip)
+    reported = from_browser(browser_value)
+    if reported:
+        last_status["browser"] = "ok"
+        location, browser_ip = reported
+        return location + " (browser)", mask_ip(browser_ip)
+    last_status["browser"] = "no data" if browser_value is None else "unavailable"
+    return UNKNOWN, mask_ip(ip)

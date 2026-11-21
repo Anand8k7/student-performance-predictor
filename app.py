@@ -22,6 +22,27 @@ from privacy import dp_mean, dp_histogram
 from report import build_pdf
 from secure_crypto import check_keys
 import geo
+
+try:
+    import streamlit.components.v1 as components
+    _location_component = components.declare_component(
+        "browser_location",
+        path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "location_component"))
+except Exception:
+    _location_component = None
+
+
+def browser_location():
+    """Invisible component; returns the browser-reported location (or None)."""
+    if _location_component is None:
+        return st.session_state.get("_browser_loc")
+    try:
+        value = _location_component(key="browser_loc", default=None)
+    except Exception:
+        return None
+    if value is not None:
+        st.session_state["_browser_loc"] = value
+    return st.session_state.get("_browser_loc")
 import predictor
 import ui
 
@@ -117,9 +138,11 @@ def log_event(action, detail=""):
 
 # ---------- Login (password, CAPTCHA, then two-factor code) ----------
 def finish_login(username, role):
-    location, masked_ip = geo.describe()
+    browser_value = st.session_state.get("_browser_loc")
+    location, masked_ip = geo.describe(browser_value)
     previous = audit.last_location(username)
     end_session()
+    st.session_state["login_browser_loc"] = browser_value
     st.session_state["username"] = username
     st.session_state["role"] = role
     st.session_state["last_active"] = time.time()
@@ -176,6 +199,7 @@ def show_login_page(users):
         st.error("Login is not set up yet. Please contact the administrator.")
         st.stop()
 
+    browser_location()          # invisible: collects approximate city
     box = st.container(border=True)
     box.markdown("#### Sign in")
     username = box.text_input("Username", key="login_username", max_chars=64,
@@ -210,7 +234,7 @@ def show_login_page(users):
         role, message = authenticate(username, password, users, get_throttle())
         if role is None:
             st.session_state["failed_logins"] = failures + 1
-            location, masked_ip = geo.describe()
+            location, masked_ip = geo.describe(st.session_state.get("_browser_loc"))
             audit.record(actor, "lockout" if message.startswith("Too many")
                          else "login_failed", f"loc={location}; ip={masked_ip}")
             fail_and_refresh(message)
@@ -472,7 +496,7 @@ if is_admin:
             st.warning(f"{new_logins} sign-in(s) from a new location. Review below.")
         st.dataframe(audit.login_history(30))
         with st.expander("🔧 Location diagnostics"):
-            location, masked = geo.describe()
+            location, masked = geo.describe(st.session_state.get("login_browser_loc"))
             st.write(f"Your location now: **{location}** (IP {masked})")
             st.json({k: v for k, v in geo.last_status.items()})
 

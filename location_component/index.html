@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head><body>
+<script>
+// Invisible Streamlit component: asks a location service (HTTPS) for this
+// browser's approximate city and returns it to the app. No GPS, no prompt.
+function send(type, data) {
+  window.parent.postMessage(Object.assign({isStreamlitMessage: true, type: type}, data || {}), "*");
+}
+function done(value) { send("streamlit:setComponentValue", {value: value, dataType: "json"}); }
+send("streamlit:componentReady", {apiVersion: 1});
+send("streamlit:setFrameHeight", {height: 0});
+function viaIpwho() {
+  return fetch("https://ipwho.is/").then(r => r.json()).then(d => {
+    if (!d.success) throw new Error("ipwho");
+    return {city: d.city, region: d.region, country: d.country, ip: d.ip, source: "ipwho.is"};
+  });
+}
+function viaIpapi() {
+  return fetch("https://ipapi.co/json/").then(r => r.json()).then(d => {
+    if (d.error) throw new Error("ipapi");
+    return {city: d.city, region: d.region, country: d.country_name, ip: d.ip, source: "ipapi.co"};
+  });
+}
+viaIpwho().catch(viaIpapi).then(done).catch(() => done({error: "unavailable"}));
+</script>
+</body></html>

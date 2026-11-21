@@ -76,3 +76,20 @@ def test_falls_back_to_next_provider(monkeypatch):
     assert geo.lookup("1.0.0.1") == "Nagpur, Maharashtra, India"
     assert len(calls) == 2
     geo.lookup.cache_clear()
+
+
+def test_browser_report_is_validated_and_cleaned():
+    loc, ip = geo.from_browser({"city": "Pune<script>", "region": "MH;x=1",
+                                "country": "India", "ip": "49.36.12.7"})
+    assert ";" not in loc and "=" not in loc and ip == "49.36.12.7"
+    assert geo.from_browser({"error": "unavailable"}) is None
+    assert geo.from_browser("not a dict") is None
+    assert geo.from_browser({"city": "", "country": ""}) is None
+
+
+def test_describe_uses_browser_when_server_ip_hidden(monkeypatch):
+    monkeypatch.setattr(geo, "client_ip", lambda: None)
+    loc, masked = geo.describe({"city": "Nagpur", "region": "Maharashtra",
+                                "country": "India", "ip": "49.36.12.7"})
+    assert loc == "Nagpur, Maharashtra, India (browser)" and masked == "49.36.12.x"
+    assert geo.describe(None)[0] == geo.UNKNOWN
