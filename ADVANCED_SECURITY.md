@@ -5,7 +5,7 @@
 
 Version 2 adds 10 advanced security controls and 5 new features on top of the
 Version 1 controls (`SECURITY_REPORT.md`). Every control has automated tests:
-**62 pytest tests** in total, run on every push by a GitHub Actions pipeline.
+**74 pytest tests** in total, run on every push by a GitHub Actions pipeline.
 
 ## 1. Summary
 
@@ -20,6 +20,7 @@ Version 1 controls (`SECURITY_REPORT.md`). Every control has automated tests:
 | 7 | Adversarial input detection (Isolation Forest) | Out-of-range or crafted inputs to the ML model | `anomaly.py` | Unusual input flagged, normal input not |
 | 8 | Rate limiting (20 predictions per minute per session) | Flooding and model-extraction attacks | `guards.py` | Blocks then recovers |
 | 9 | Differential privacy (Laplace mechanism, ε = 1.0 per statistic) for Users | Re-identifying a student from class statistics | `privacy.py` | Noise present, accuracy kept |
+| 10b | Sign-in location tracking (city from IP, masked IP) with new-location alerts | Account takeover from a new place | `geo.py`, `audit.py`, `app.py` | IP parsing, masking, lookup failure, history |
 | 10 | DevSecOps pipeline: pytest, Bandit, pip-audit, Gitleaks on every push | Insecure code, vulnerable libraries, leaked secrets | `.github/workflows/security.yml` | Runs in GitHub Actions |
 
 ### New features

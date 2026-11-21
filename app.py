@@ -21,6 +21,7 @@ from models import Student
 from privacy import dp_mean, dp_histogram
 from report import build_pdf
 from secure_crypto import check_keys
+import geo
 import predictor
 import ui
 
@@ -115,12 +116,19 @@ def log_event(action, detail=""):
 
 # ---------- Login (password, CAPTCHA, then two-factor code) ----------
 def finish_login(username, role):
+    location, masked_ip = geo.describe()
+    previous = audit.last_location(username)
     end_session()
     st.session_state["username"] = username
     st.session_state["role"] = role
     st.session_state["last_active"] = time.time()
     st.session_state["sid"] = secrets.token_hex(8)
-    audit.record(username, "login_success", f"role {role}")
+    audit.record(username, "login_success",
+                 f"role {role}; loc={location}; ip={masked_ip}")
+    if previous and location != geo.UNKNOWN and previous != location:
+        audit.record(username, "new_location_login", f"loc={location}; was={previous}")
+        st.session_state["new_location"] = (location, previous)
+    st.session_state["login_location"] = location
     st.rerun()
 
 
@@ -190,8 +198,9 @@ def show_login_page(users):
         if role is None:
             st.session_state["failed_logins"] = failures + 1
             st.session_state.pop("captcha", None)
+            location, masked_ip = geo.describe()
             audit.record(actor, "lockout" if message.startswith("Too many")
-                         else "login_failed")
+                         else "login_failed", f"loc={location}; ip={masked_ip}")
             st.error(message)
         elif users[key].get("totp_secret"):
             st.session_state["mfa_user"] = key
@@ -231,6 +240,7 @@ is_admin = current_role == ROLE_ADMIN
 
 with st.sidebar:
     ui.sidebar_user(current_user, is_admin, bool(users[current_user].get("totp_secret")))
+    st.caption(f"📍 Signed in from {st.session_state.get('login_location', geo.UNKNOWN)}")
     st.divider()
     st.caption("ℹ️ Linear Regression trained on 300 synthetic student records. "
                "Predictions are guidance only.")
@@ -241,6 +251,10 @@ with st.sidebar:
         st.rerun()
 
 ui.hero("🛡️ Administrator view" if is_admin else "🎓 Student view")
+if "new_location" in st.session_state:
+    new_loc, old_loc = st.session_state["new_location"]
+    st.warning(f"🌍 New sign-in location: {new_loc} (last time: {old_loc}). "
+               "If this wasn't you, change your password and tell the administrator.")
 
 try:
     df = load_data()
@@ -438,6 +452,13 @@ if is_admin:
             ui.section("Events by type")
             ui.bar_chart(list(counts.keys()), list(counts.values()), "Events",
                          height=max(160, 28 * len(counts)))
+
+        ui.section("🌍 Sign-in locations",
+                   "Approximate city from the IP address; IPs are partly masked.")
+        new_logins = counts.get("new_location_login", 0)
+        if new_logins:
+            st.warning(f"{new_logins} sign-in(s) from a new location. Review below.")
+        st.dataframe(audit.login_history(30))
 
         st.markdown("#### 🔗 Tamper-evident audit log")
         a1, a2 = st.columns(2)

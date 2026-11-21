@@ -89,6 +89,30 @@ class AuditLog:
         finally:
             conn.close()
 
+    def last_location(self, actor):
+        """Location of the actor's most recent successful login, or None."""
+        conn = sqlite3.connect(self.db_name)
+        try:
+            row = conn.execute(
+                "SELECT detail FROM audit_log WHERE actor = ? AND action = 'login_success' "
+                "ORDER BY id DESC LIMIT 1", (_clean(actor),)).fetchone()
+        finally:
+            conn.close()
+        if not row or "loc=" not in row[0]:
+            return None
+        return row[0].split("loc=", 1)[1].split(";")[0].strip()
+
+    def login_history(self, limit=30):
+        conn = sqlite3.connect(self.db_name)
+        try:
+            return pd.read_sql(
+                "SELECT ts AS time, actor AS user, action AS event, detail "
+                "FROM audit_log WHERE action IN "
+                "('login_success', 'login_failed', 'lockout', 'new_location_login') "
+                "ORDER BY id DESC LIMIT ?", conn, params=(int(limit),))
+        finally:
+            conn.close()
+
     def counts(self):
         conn = sqlite3.connect(self.db_name)
         try:

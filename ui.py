@@ -169,7 +169,7 @@ def login_header(subtitle="Sign in to continue"):
 
 
 def login_footer():
-    _html('<p class="spp-foot">🔒 Argon2id passwords · two-factor login · encrypted data · audited</p>')
+    _html('<p class="spp-foot">🔒 Argon2id passwords · two-factor login · encrypted data · audited<br>🌍 For security, your approximate sign-in location (city) is recorded.</p>')
 
 
 def nice(name):
