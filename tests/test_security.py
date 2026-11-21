@@ -19,10 +19,14 @@ USER_PW = "Test-User-Pass-2"
 HEADER = "name,study_hours,attendance,internal1,internal2,assignment,semester_score\n"
 
 
+TEST_TOTP = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+
+
 @pytest.fixture(scope="module")
 def users():
     return load_users({
-        "admin": {"password_hash": hash_password(ADMIN_PW), "role": "admin"},
+        "admin": {"password_hash": hash_password(ADMIN_PW), "role": "admin",
+                  "totp_secret": TEST_TOTP},
         "student1": {"password_hash": hash_password(USER_PW), "role": "user"},
     })
 
@@ -63,11 +67,13 @@ def test_invalid_input_is_rejected(args, message):
 
 # ---------------- Database and SQL injection ----------------
 def test_sql_injection_text_is_stored_as_plain_text(tmp_path):
+    from secure_crypto import encrypt_text
     db = Database(str(tmp_path / "test.db"))
     attack = "Robert'); DROP TABLE students;--"
     conn = sqlite3.connect(db.db_name)
     with conn:
-        conn.execute("INSERT INTO students (name) VALUES (?)", (attack,))
+        conn.execute("INSERT INTO students (name) VALUES (?)",
+                     (encrypt_text(db.cipher, attack),))
     conn.close()
     df = db.get_all()
     assert len(df) == 1 and df.loc[0, "name"] == attack   # table still exists
@@ -169,6 +175,8 @@ def test_bad_account_settings_are_ignored():
     users = load_users({
         "admin2": {"password_hash": good, "role": "superuser"},   # unknown role
         "weak": {"password_hash": "plain-text", "role": "user"},  # not a hash
+        "nomfa": {"password_hash": good, "role": "admin"},        # admin without 2FA
+        "badmfa": {"password_hash": good, "role": "user", "totp_secret": "abc"},
         "ok1": {"password_hash": good, "role": "user"},
     })
     assert list(users) == ["ok1"]
