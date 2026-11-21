@@ -4,7 +4,7 @@ import tempfile
 import time
 from datetime import datetime
 
-import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -126,9 +126,9 @@ def finish_login(username, role):
 
 def show_mfa_step(users):
     user = st.session_state["mfa_user"]
-    ui.login_header()
+    ui.login_header("Two-factor verification")
     box = st.container(border=True)
-    box.markdown("#### 🔑 Two-factor check")
+    box.markdown("#### 🔑 Enter your code")
     box.caption(f"Open your authenticator app and enter the 6-digit code for {user}.")
     code = box.text_input("6-digit code", key="mfa_code", max_chars=6,
                           placeholder="123456")
@@ -159,7 +159,7 @@ def show_login_page(users):
         st.stop()
 
     box = st.container(border=True)
-    box.markdown("#### 🔐 Sign in")
+    box.markdown("#### Sign in")
     username = box.text_input("Username", key="login_username", max_chars=64,
                               placeholder="e.g. student1")
     password = box.text_input("Password", type="password",
@@ -230,24 +230,17 @@ if not logged_in:
 is_admin = current_role == ROLE_ADMIN
 
 with st.sidebar:
-    st.markdown("### 👤 Account")
-    st.markdown(f"**{current_user}**")
-    st.caption(("🛡️ Administrator" if is_admin else "🎓 Student user"))
-    if users[current_user].get("totp_secret"):
-        st.caption("🔑 Two-factor login active")
-    st.caption("⏱️ Auto-logout after 15 minutes of inactivity")
+    ui.sidebar_user(current_user, is_admin, bool(users[current_user].get("totp_secret")))
     st.divider()
-    st.markdown("### ℹ️ About")
-    st.caption("Linear Regression trained on 300 synthetic student records. "
+    st.caption("ℹ️ Linear Regression trained on 300 synthetic student records. "
                "Predictions are guidance only.")
-    st.divider()
     if st.button("Log out", key="logout_button"):
         audit.record(current_user, "logout")
         logger.info("Logout for user '%s'", safe_for_log(current_user))
         end_session()
         st.rerun()
 
-ui.hero()
+ui.hero("🛡️ Administrator view" if is_admin else "🎓 Student view")
 
 try:
     df = load_data()
@@ -257,22 +250,23 @@ except Exception:
     st.stop()
 
 # ---------- Dashboard cards ----------
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("👩‍🎓 Students", len(df))
 if is_admin:
-    k2.metric("📈 Class average", f"{df['semester_score'].mean():.1f} / 100")
-    k3.metric("⚠️ At risk (< 60)",
-              sum(p < 60 for p in predictor.predict_many(df)))
+    at_risk_count = sum(p < 60 for p in predictor.predict_many(df))
     chain_ok = audit.verify()[0] and predictor.model_status() != "tampered"
-    k4.metric("🛡️ Security status", "All checks OK" if chain_ok else "Attention")
+    ui.kpi_cards([
+        ("👩‍🎓", "Students", len(df), "records in database", ui.ACCENT),
+        ("📈", "Class average", f"{df['semester_score'].mean():.1f}", "out of 100", ui.ACCENT_2),
+        ("⚠️", "At risk", at_risk_count, "predicted below 60", ui.WARN),
+        ("🛡️", "Security", "All OK" if chain_ok else "Check", "audit log + model",
+         ui.GOOD if chain_ok else ui.BAD)])
 else:
     dp_means, _, _ = get_dp_stats(len(df))
-    k2.metric("📈 Class average", f"≈ {dp_means['semester_score']} / 100")
     last = st.session_state.get("last_prediction")
-    k3.metric("🔮 Your last prediction",
-              f"{last['score']} / 100" if last else "—")
-    k4.metric("🔒 Data protection", "Privacy-protected")
-st.write("")
+    ui.kpi_cards([
+        ("👩‍🎓", "Students", len(df), "in the class", ui.ACCENT),
+        ("📈", "Class average", f"≈ {dp_means['semester_score']}", "privacy-protected", ui.ACCENT_2),
+        ("🔮", "Your prediction", last["score"] if last else "—", "out of 100", ui.GOOD),
+        ("🔒", "Privacy", "Protected", "differential privacy", ui.WARN)])
 
 tab_names = ["🔮 Predict", "📊 Insights"]
 if is_admin:
@@ -281,8 +275,7 @@ tabs = st.tabs(tab_names)
 
 # ---------- Tab 1: Predict ----------
 with tabs[0]:
-    st.subheader("Enter student details")
-    st.caption("Move the sliders, then click Predict.")
+    ui.section("Enter student details", "Move the sliders, then click Predict.")
     col1, col2 = st.columns(2)
     with col1:
         study_hours = st.slider("Study hours per day", 0.0, 24.0, 5.0, 0.5)
@@ -295,7 +288,7 @@ with tabs[0]:
               "internal1": internal1, "internal2": internal2,
               "assignment": assignment}
 
-    if st.button("Predict semester score", type="primary"):
+    if st.button("🔮 Predict semester score", key="Predict semester score", type="primary"):
         if not get_rate_limiter().allow(st.session_state.get("sid", current_user)):
             log_event("rate_limited")
             st.error("Too many predictions in a short time. Please wait a minute.")
@@ -319,32 +312,22 @@ with tabs[0]:
 
     result = st.session_state.get("last_prediction")
     if result:
-        st.divider()
-        grade, note = ui.grade_for(result["score"])
-        r1, r2, r3 = st.columns([2, 1, 2])
-        r1.metric("Predicted semester score", f"{result['score']} / 100")
-        r2.metric("Grade", grade)
-        r3.metric("Verdict", note)
-        st.progress(min(max(result["score"] / 100, 0.0), 1.0))
         if result["score"] < 40:
-            st.error("At risk: this student is likely to fail without support.")
+            hint = "Likely to fail without support. Focus on study hours and attendance."
         elif result["score"] < 60:
-            st.info("Below average: more study hours and attendance would help most.")
+            hint = "Below average. More study hours and attendance would help most."
         else:
-            st.success(f"Predicted semester score: {result['score']} / 100")
+            hint = "On track. Keep the same routine through the semester."
+        ui.score_card(result["score"], hint)
+        st.success(f"Predicted semester score: {result['score']} / 100")
         if result["flagged"]:
             st.warning("⚠️ These inputs look unusual compared with real students. "
                        "The prediction may be unreliable, and this has been logged.")
-        st.markdown("##### Why this prediction?")
-        st.caption(f"Marks added by each factor, starting from a base of "
-                   f"{result['base']}.")
-        items = sorted(result["contributions"].items(), key=lambda kv: kv[1])
-        fig, ax = plt.subplots(figsize=(7, 2.8))
-        ax.barh([ui.nice(k) for k, _ in items], [v for _, v in items],
-                color=[ui.POSITIVE if v >= 0 else ui.NEGATIVE for _, v in items])
-        ax.set_xlabel("Marks added")
-        ax.grid(axis="y", visible=False)
-        st.pyplot(fig)
+        ui.section("Why this prediction?",
+                   f"Marks added by each factor, starting from a base of {result['base']}.")
+        items = result["contributions"]
+        ui.bar_chart([ui.nice(k) for k in items], list(items.values()), "Marks added",
+                     [ui.ACCENT if v >= 0 else ui.BAD for v in items.values()])
         pdf = build_pdf(result["inputs"], result["score"], result["contributions"],
                         current_user, result["at"])
         st.download_button("📄 Download PDF report", pdf,
@@ -353,52 +336,45 @@ with tabs[0]:
 
 # ---------- Tab 2: Insights ----------
 with tabs[1]:
-    st.subheader("What affects the semester score?")
-    corr = correlations(df).sort_values()
-    fig, ax = plt.subplots(figsize=(7, 3))
-    ax.barh([ui.nice(k) for k in corr.index], corr.values, color=ui.PRIMARY)
-    ax.set_xlabel("Correlation with semester score")
-    ax.grid(axis="y", visible=False)
-    st.pyplot(fig)
+    ui.section("What affects the semester score?",
+               "Correlation of each factor with the final score (1.0 = strongest).")
+    corr = correlations(df)
+    ui.bar_chart([ui.nice(k) for k in corr.index], list(corr.values),
+                 "Correlation", height=220)
 
     if is_admin:
-        st.subheader("Score distribution (exact)")
-        fig2, ax2 = plt.subplots(figsize=(7, 3))
-        ax2.hist(df["semester_score"], bins=10, color=ui.PRIMARY, edgecolor="white")
-        ax2.set_xlabel("Semester score")
-        ax2.set_ylabel("Number of students")
-        st.pyplot(fig2)
-        st.subheader("Class summary (exact)")
-        st.dataframe(summary(df))
+        counts, edges = np.histogram(df["semester_score"], bins=10)
+        ui.section("Score distribution", "Exact figures (admin view).")
     else:
         means, counts, edges = get_dp_stats(len(df))
-        st.subheader("Score distribution (privacy-protected)")
-        fig2, ax2 = plt.subplots(figsize=(7, 3))
-        ax2.bar(edges[:-1], counts, width=edges[1] - edges[0], align="edge",
-                color=ui.PRIMARY, edgecolor="white")
-        ax2.set_xlabel("Semester score")
-        ax2.set_ylabel("Number of students (approx.)")
-        st.pyplot(fig2)
-        st.subheader("Class averages (privacy-protected)")
+        ui.section("Score distribution", "Privacy-protected (approximate) figures.")
+    ui.column_chart([f"{edges[i]:.0f}–{edges[i + 1]:.0f}" for i in range(len(counts))],
+                    [int(c) for c in counts], "Semester score", "Students")
+
+    if is_admin:
+        ui.section("Class summary", "Exact statistics.")
+        st.dataframe(summary(df))
+    else:
+        ui.section("Class averages", "Privacy-protected.")
         st.dataframe(pd.DataFrame({"Average (approx.)": {ui.nice(k): v
                                                           for k, v in means.items()}}))
         st.caption(f"Protected with differential privacy (ε = {EPSILON} per "
                    "statistic): small random noise hides any single student.")
 
-    st.subheader("Model comparison")
+    ui.section("Model comparison", "Accuracy on held-out test data.")
     st.dataframe(get_model_comparison())
 
 # ---------- Admin-only tabs (checked in code; Users never receive this data) ----------
 if is_admin:
     with tabs[2]:
-        st.subheader("All students")
+        ui.section("All students", "Names are decrypted only for admins.")
         st.dataframe(df)
         st.download_button("Download data as CSV", df.to_csv(index=False),
                            file_name="students.csv",
                            on_click=log_event, args=("data_exported",))
 
     with tabs[3]:
-        st.subheader("Students at risk")
+        ui.section("Students at risk", "Predicted score below the chosen threshold.")
         threshold = st.slider("Flag students predicted below", 30, 90, 60)
         at_risk = df.assign(predicted=predictor.predict_many(df))
         at_risk = at_risk[at_risk["predicted"] < threshold].sort_values("predicted")
@@ -407,7 +383,7 @@ if is_admin:
                               "internal1", "internal2", "assignment"]])
 
     with tabs[4]:
-        st.subheader("Add one student")
+        ui.section("Add one student", "Every field is validated; the name is stored encrypted.")
         with st.form("add_student", clear_on_submit=True):
             name = st.text_input("Name", max_chars=50)
             c1, c2, c3 = st.columns(3)
@@ -426,7 +402,7 @@ if is_admin:
                 except ValueError as error:
                     st.error(str(error))
 
-        st.subheader("Upload a CSV file")
+        ui.section("Upload a CSV file", "One bad row rejects the whole file. Maximum 1 MB.")
         upload = st.file_uploader("CSV with the standard columns", type=["csv"])
         if upload is not None and st.button("Import file", key="import_csv"):
             if upload.size > MAX_UPLOAD_BYTES:
@@ -449,16 +425,19 @@ if is_admin:
                         os.remove(path)
 
     with tabs[5]:
-        st.subheader("Security dashboard")
+        ui.section("Security dashboard", "Live security status and attack simulations.")
         counts = audit.counts()
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Successful logins", counts.get("login_success", 0))
-        m2.metric("Failed logins", counts.get("login_failed", 0)
-                  + counts.get("mfa_failed", 0) + counts.get("captcha_failed", 0))
-        m3.metric("Lockouts", counts.get("lockout", 0))
-        m4.metric("Anomalies flagged", counts.get("anomaly_flagged", 0))
+        failed = (counts.get("login_failed", 0) + counts.get("mfa_failed", 0)
+                  + counts.get("captcha_failed", 0))
+        ui.kpi_cards([
+            ("✅", "Successful logins", counts.get("login_success", 0), "since restart", ui.GOOD),
+            ("❌", "Failed logins", failed, "password, 2FA, CAPTCHA", ui.BAD),
+            ("🔒", "Lockouts", counts.get("lockout", 0), "5 failures = 60 s", ui.WARN),
+            ("🧪", "Anomalies", counts.get("anomaly_flagged", 0), "unusual inputs", ui.ACCENT)])
         if counts:
-            st.bar_chart(pd.Series(counts, name="events"))
+            ui.section("Events by type")
+            ui.bar_chart(list(counts.keys()), list(counts.values()), "Events",
+                         height=max(160, 28 * len(counts)))
 
         st.markdown("#### 🔗 Tamper-evident audit log")
         a1, a2 = st.columns(2)
