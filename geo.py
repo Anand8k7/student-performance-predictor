@@ -5,23 +5,43 @@ from functools import lru_cache
 
 import requests
 
-LOOKUP_URL = "https://ipapi.co/{ip}/json/"     # HTTPS only
 TIMEOUT_SECONDS = 2
 UNKNOWN = "Unknown location"
+IP_HEADERS = ["X-Forwarded-For", "X-Real-Ip", "Cf-Connecting-Ip",
+              "True-Client-Ip", "X-Client-Ip", "Forwarded"]
+
+# Several HTTPS providers, tried in order (one may block shared cloud servers).
+PROVIDERS = [
+    ("ipapi.co", "https://ipapi.co/{ip}/json/",
+     lambda d: (d.get("city"), d.get("region"), d.get("country_name")) if not d.get("error") else None),
+    ("ipwho.is", "https://ipwho.is/{ip}",
+     lambda d: (d.get("city"), d.get("region"), d.get("country")) if d.get("success") else None),
+    ("ipinfo.io", "https://ipinfo.io/{ip}/json",
+     lambda d: (d.get("city"), d.get("region"), d.get("country")) if not d.get("bogon") else None),
+]
+
+last_status = {}      # for the admin diagnostic box (no full IPs stored)
 
 
 def parse_ip(value):
-    """Return a valid public IP string, or None."""
+    """Return a valid public IP string, or None. Checks every hop."""
     if not value:
         return None
-    candidate = str(value).split(",")[0].strip()      # first hop of X-Forwarded-For
-    try:
-        ip = ipaddress.ip_address(candidate)
-    except ValueError:
-        return None
-    if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
-        return None
-    return str(ip)
+    text = str(value)
+    if text.lower().startswith("for=") or ";" in text:        # "Forwarded" header
+        text = ",".join(p.split("=", 1)[1] for p in text.replace(";", ",").split(",")
+                        if p.strip().lower().startswith("for="))
+    for candidate in text.split(","):
+        candidate = candidate.strip().strip('"').strip("[]")
+        if candidate.count(":") == 1:                           # ip:port
+            candidate = candidate.split(":")[0]
+        try:
+            ip = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if not (ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local):
+            return str(ip)
+    return None
 
 
 def mask_ip(ip):
@@ -36,33 +56,54 @@ def mask_ip(ip):
 def client_ip():
     try:
         import streamlit as st
-        ip = parse_ip(getattr(st.context, "ip_address", None))
+        context_ip = getattr(st.context, "ip_address", None)
+        last_status["context_ip"] = "public" if parse_ip(context_ip) else (
+            "private/proxy" if context_ip else "none")
+        ip = parse_ip(context_ip)
         if ip:
+            last_status["ip_source"] = "st.context.ip_address"
             return ip
         headers = st.context.headers
-        return parse_ip(headers.get("X-Forwarded-For") or headers.get("X-Real-Ip"))
-    except Exception:
-        return None
+        last_status["headers_present"] = [h for h in IP_HEADERS if headers.get(h)]
+        for name in IP_HEADERS:
+            ip = parse_ip(headers.get(name))
+            if ip:
+                last_status["ip_source"] = name
+                return ip
+        last_status["ip_source"] = "not found"
+    except Exception as error:
+        last_status["ip_source"] = f"error: {type(error).__name__}"
+    return None
 
 
 def _clean(text):
-    return "".join(c for c in str(text)[:40] if c.isprintable() and c not in ";=")
+    return "".join(c for c in str(text or "")[:40] if c.isprintable() and c not in ";=")
 
 
 @lru_cache(maxsize=512)
 def lookup(ip):
     if not ip:
         return UNKNOWN
-    try:
-        response = requests.get(LOOKUP_URL.format(ip=ip), timeout=TIMEOUT_SECONDS)
-        data = response.json() if response.ok else {}
-    except Exception:
-        return UNKNOWN
-    if data.get("error"):
-        return UNKNOWN
-    parts = [_clean(data.get(k, "")) for k in ("city", "region", "country_name")]
-    parts = [p for p in parts if p]
-    return ", ".join(parts) if parts else UNKNOWN
+    results = []
+    for name, url, read in PROVIDERS:
+        try:
+            response = requests.get(url.format(ip=ip), timeout=TIMEOUT_SECONDS,
+                                    headers={"User-Agent": "student-performance-predictor"})
+            fields = read(response.json()) if response.ok else None
+        except Exception as error:
+            results.append(f"{name}: {type(error).__name__}")
+            continue
+        if not response.ok:
+            results.append(f"{name}: HTTP {response.status_code}")
+            continue
+        parts = [_clean(p) for p in (fields or ()) if _clean(p)]
+        if parts:
+            results.append(f"{name}: ok")
+            last_status["lookup"] = results
+            return ", ".join(parts)
+        results.append(f"{name}: no data")
+    last_status["lookup"] = results
+    return UNKNOWN
 
 
 def describe():

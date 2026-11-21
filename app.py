@@ -460,6 +460,10 @@ if is_admin:
         if new_logins:
             st.warning(f"{new_logins} sign-in(s) from a new location. Review below.")
         st.dataframe(audit.login_history(30))
+        with st.expander("🔧 Location diagnostics"):
+            location, masked = geo.describe()
+            st.write(f"Your location now: **{location}** (IP {masked})")
+            st.json({k: v for k, v in geo.last_status.items()})
 
         st.markdown("#### 🔗 Tamper-evident audit log")
         a1, a2 = st.columns(2)
