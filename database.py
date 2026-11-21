@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 from logger_config import get_logger
 from models import Student
+from secure_crypto import get_cipher, encrypt_text, decrypt_text
 
 logger = get_logger("database")
 
@@ -18,8 +19,11 @@ INSERT_SQL = (
 
 
 class Database:
-    def __init__(self, db_name="students.db"):
+    """Student records. Names are encrypted at rest (Fernet / AES)."""
+
+    def __init__(self, db_name="students.db", cipher=None):
         self.db_name = db_name
+        self.cipher = cipher or get_cipher()
         self._create_table()
 
     def _connect(self):
@@ -44,11 +48,16 @@ class Database:
         finally:
             conn.close()
 
+    def _encrypted_row(self, student):
+        row = list(student.to_tuple())
+        row[0] = encrypt_text(self.cipher, row[0])
+        return tuple(row)
+
     def add_student(self, student):
         conn = self._connect()
         try:
             with conn:
-                conn.execute(INSERT_SQL, student.to_tuple())
+                conn.execute(INSERT_SQL, self._encrypted_row(student))
             logger.info("Added one student record")
         except sqlite3.Error as e:
             logger.error(f"Database error while adding student: {e}")
@@ -96,17 +105,31 @@ class Database:
         conn = self._connect()
         try:
             with conn:
-                conn.executemany(INSERT_SQL, [s.to_tuple() for s in students])
+                conn.executemany(INSERT_SQL,
+                                 [self._encrypted_row(s) for s in students])
         except sqlite3.Error as e:
             logger.error(f"Database error while loading CSV: {e}")
             raise
         finally:
             conn.close()
         logger.info(f"Loaded {len(students)} validated rows from CSV")
+        return len(students)
 
     def get_all(self):
         conn = self._connect()
         try:
-            return pd.read_sql("SELECT * FROM students", conn)
+            df = pd.read_sql("SELECT * FROM students", conn)
+        finally:
+            conn.close()
+        df["name"] = [decrypt_text(self.cipher, v) for v in df["name"]]
+        return df
+
+    def get_raw(self, limit=3):
+        """What an attacker who steals the database file would see."""
+        conn = self._connect()
+        try:
+            return pd.read_sql(
+                "SELECT id, name AS stored_name FROM students ORDER BY id LIMIT ?",
+                conn, params=(int(limit),))
         finally:
             conn.close()

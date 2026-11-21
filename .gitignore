@@ -34,3 +34,6 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Model signature is made with a secret key on each server
+saved_model/model.sig

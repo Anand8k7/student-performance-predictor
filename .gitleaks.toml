@@ -1,0 +1,11 @@
+# Gitleaks settings: use the standard rules, but skip test fixtures and
+# documentation examples, which contain made-up, non-secret sample values.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and documentation examples"
+paths = [
+  '''^tests/''',
+  '''\.md$''',
+]

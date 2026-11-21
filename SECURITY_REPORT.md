@@ -5,6 +5,8 @@
 **Group:** [Group name] | **Members:** [Name 1], [Name 2], [Name 3], [Name 4]
 **Date:** 18 November 2026 | **Branch:** secure-se-improvements
 
+Version 2 adds advanced controls: see `ADVANCED_SECURITY.md`.
+
 Related documents: `SRS.md`, `SECURITY_REQUIREMENTS.md`, `THREAT_MODEL.md`, `UML.md`, `DEMO.md`.
 
 ---

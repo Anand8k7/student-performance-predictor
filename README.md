@@ -1,5 +1,7 @@
 # 🎓 Student Performance Predictor
 
+![Security pipeline](https://github.com/Anand8k7/student-performance-predictor/actions/workflows/security.yml/badge.svg)
+
 A web app that predicts a student's **semester exam score (out of 100)** from internal marks, assignment marks, study hours and attendance. It follows the marking pattern used in my college:
 
 | Component | Marks |
@@ -95,3 +97,15 @@ student-performance-predictor/
 ## 👤 Author
 **Rupesh Holkar**
 GitHub: [rupeshholkar27-cell](https://github.com/rupeshholkar27-cell)
+
+## 🛡️ Security (Version 2)
+- Two-factor login (TOTP) required for admins, with replay protection
+- Tamper-evident audit log (HMAC-SHA256 hash chain)
+- Student names encrypted at rest (Fernet / AES)
+- HMAC-signed ML model, verified before loading
+- Session timeout, CAPTCHA, lockout, rate limiting
+- Adversarial input detection (Isolation Forest)
+- Differential privacy for class statistics
+- CI pipeline: pytest (62 tests), Bandit, pip-audit, Gitleaks
+
+Details: [ADVANCED_SECURITY.md](ADVANCED_SECURITY.md) and [SECURITY_REPORT.md](SECURITY_REPORT.md).

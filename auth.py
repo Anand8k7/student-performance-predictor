@@ -7,6 +7,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
 from logger_config import get_logger
+from mfa import valid_secret
 
 logger = get_logger("auth")
 
@@ -105,12 +106,23 @@ def load_users(raw_users):
             logger.error("Ignored account '%s': invalid role",
                          safe_for_log(name))
             continue
+        totp_secret = info.get("totp_secret")
+        if totp_secret is not None and not valid_secret(totp_secret):
+            logger.error("Ignored account '%s': invalid two-factor secret",
+                         safe_for_log(name))
+            continue
+        if role == ROLE_ADMIN and totp_secret is None:
+            # Privileged accounts MUST use two-factor login (fail closed).
+            logger.error("Ignored admin account '%s': two-factor login not set up",
+                         safe_for_log(name))
+            continue
         key = name.lower()
         if key in users:
             logger.error("Ignored account '%s': duplicate username",
                          safe_for_log(name))
             continue
-        users[key] = {"password_hash": password_hash, "role": role}
+        users[key] = {"password_hash": password_hash, "role": role,
+                      "totp_secret": totp_secret}
     return users
 
 
@@ -199,3 +211,26 @@ def authenticate(username, password, users, throttle=None):
         throttle.record_failure(key)
     logger.warning("Failed login for user '%s'", who)
     return None, GENERIC_FAILURE
+
+
+def verify_second_factor(username, code, users, verifier, throttle=None):
+    """Second login step for accounts with two-factor login.
+    Wrong codes count towards the same lockout as wrong passwords."""
+    key = normalize_username(username)
+    account = users.get(key)
+    if account is None or not account.get("totp_secret"):
+        return False, GENERIC_FAILURE
+    if throttle is not None:
+        wait = throttle.seconds_locked(key)
+        if wait > 0:
+            return False, (f"Too many failed attempts. "
+                           f"Please wait {wait} seconds and try again.")
+    if verifier.verify(key, account["totp_secret"], code):
+        if throttle is not None:
+            throttle.record_success(key)
+        logger.info("Two-factor success for user '%s'", safe_for_log(key))
+        return True, "Login successful."
+    if throttle is not None:
+        throttle.record_failure(key)
+    logger.warning("Two-factor failure for user '%s'", safe_for_log(key))
+    return False, "Incorrect or already used code."
