@@ -64,8 +64,9 @@ def get_rate_limiter():
     return RateLimiter(max_events=20, window_seconds=60)
 
 
-@st.cache_resource
 def get_audit():
+    # Created fresh on every run (cheap), so code updates never leave an
+    # outdated object in memory.
     log = AuditLog()
     predictor.on_tamper = log.record
     return log
