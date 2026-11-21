@@ -156,6 +156,15 @@ def show_mfa_step(users):
     st.stop()
 
 
+def fail_and_refresh(message):
+    """Show the error and a NEW security question together, so the question
+    on screen is always the one that will be checked."""
+    st.session_state["login_error"] = message
+    st.session_state.pop("captcha", None)
+    st.session_state.pop("captcha_answer", None)
+    st.rerun()
+
+
 def show_login_page(users):
     if "mfa_user" in st.session_state:
         show_mfa_step(users)
@@ -183,26 +192,28 @@ def show_login_page(users):
         captcha_answer = box.text_input(question, key="captcha_answer", max_chars=3)
 
     clicked = box.button("Log in", key="login_button", type="primary")
+    flash = st.session_state.pop("login_error", None)
+    if flash:
+        st.error(flash)
     ui.login_footer()
     if clicked:
         key = normalize_username(username)
         actor = key if key in users else "(unknown username)"
         if needs_captcha:
-            _, expected = st.session_state.pop("captcha")
+            # Check against the question that is ON SCREEN right now.
+            _, expected = st.session_state["captcha"]
             if not captcha_ok(captcha_answer, expected):
                 st.session_state["failed_logins"] = failures + 1
                 audit.record(actor, "captcha_failed")
-                st.error("Wrong answer to the security check. Try again.")
-                st.stop()
+                fail_and_refresh("Wrong answer to the security check. Try again.")
 
         role, message = authenticate(username, password, users, get_throttle())
         if role is None:
             st.session_state["failed_logins"] = failures + 1
-            st.session_state.pop("captcha", None)
             location, masked_ip = geo.describe()
             audit.record(actor, "lockout" if message.startswith("Too many")
                          else "login_failed", f"loc={location}; ip={masked_ip}")
-            st.error(message)
+            fail_and_refresh(message)
         elif users[key].get("totp_secret"):
             st.session_state["mfa_user"] = key
             st.session_state["mfa_role"] = role
