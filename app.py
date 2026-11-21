@@ -22,11 +22,14 @@ from privacy import dp_mean, dp_histogram
 from report import build_pdf
 from secure_crypto import check_keys
 import predictor
+import ui
 
 logger = get_logger("app")
 
-st.set_page_config(page_title="Student Performance Predictor")
-st.title("🎓 Student Performance Predictor")
+_signed_in = st.session_state.get("role") in ROLES
+st.set_page_config(page_title="Student Performance Predictor", page_icon="🎓",
+                   layout="wide" if _signed_in else "centered")
+ui.apply_style()
 
 FRIENDLY_ERROR = "Something went wrong. Please try again later."
 SESSION_TIMEOUT_SECONDS = 15 * 60
@@ -123,11 +126,14 @@ def finish_login(username, role):
 
 def show_mfa_step(users):
     user = st.session_state["mfa_user"]
-    st.subheader("🔑 Two-factor check")
-    st.write(f"Enter the 6-digit code from your authenticator app for **{user}**.")
-    code = st.text_input("6-digit code", key="mfa_code", max_chars=6)
-    col1, col2 = st.columns(2)
-    if col1.button("Verify", key="mfa_button"):
+    ui.login_header()
+    box = st.container(border=True)
+    box.markdown("#### 🔑 Two-factor check")
+    box.caption(f"Open your authenticator app and enter the 6-digit code for {user}.")
+    code = box.text_input("6-digit code", key="mfa_code", max_chars=6,
+                          placeholder="123456")
+    col1, col2 = box.columns(2)
+    if col1.button("Verify", key="mfa_button", type="primary"):
         ok, message = verify_second_factor(user, code, users, get_verifier(),
                                            get_throttle())
         if ok:
@@ -145,16 +151,19 @@ def show_login_page(users):
     if "mfa_user" in st.session_state:
         show_mfa_step(users)
 
-    st.subheader("🔐 Please log in")
+    ui.login_header()
     if st.session_state.pop("timed_out", False):
         st.warning("You were logged out after 15 minutes of inactivity.")
     if not users:
         st.error("Login is not set up yet. Please contact the administrator.")
         st.stop()
 
-    username = st.text_input("Username", key="login_username", max_chars=64)
-    password = st.text_input("Password", type="password",
-                             key="login_password", max_chars=128)
+    box = st.container(border=True)
+    box.markdown("#### 🔐 Sign in")
+    username = box.text_input("Username", key="login_username", max_chars=64,
+                              placeholder="e.g. student1")
+    password = box.text_input("Password", type="password",
+                              key="login_password", max_chars=128)
 
     failures = st.session_state.get("failed_logins", 0)
     needs_captcha = failures >= CAPTCHA_AFTER_FAILURES
@@ -162,9 +171,11 @@ def show_login_page(users):
         if "captcha" not in st.session_state:
             st.session_state["captcha"] = new_captcha()
         question, _ = st.session_state["captcha"]
-        captcha_answer = st.text_input(question, key="captcha_answer", max_chars=3)
+        captcha_answer = box.text_input(question, key="captcha_answer", max_chars=3)
 
-    if st.button("Log in", key="login_button"):
+    clicked = box.button("Log in", key="login_button", type="primary")
+    ui.login_footer()
+    if clicked:
         key = normalize_username(username)
         actor = key if key in users else "(unknown username)"
         if needs_captcha:
@@ -219,18 +230,24 @@ if not logged_in:
 is_admin = current_role == ROLE_ADMIN
 
 with st.sidebar:
-    st.markdown(f"Logged in as **{current_user}** ({current_role})")
+    st.markdown("### 👤 Account")
+    st.markdown(f"**{current_user}**")
+    st.caption(("🛡️ Administrator" if is_admin else "🎓 Student user"))
     if users[current_user].get("totp_secret"):
         st.caption("🔑 Two-factor login active")
-    st.caption("Auto-logout after 15 minutes of inactivity")
+    st.caption("⏱️ Auto-logout after 15 minutes of inactivity")
+    st.divider()
+    st.markdown("### ℹ️ About")
+    st.caption("Linear Regression trained on 300 synthetic student records. "
+               "Predictions are guidance only.")
+    st.divider()
     if st.button("Log out", key="logout_button"):
         audit.record(current_user, "logout")
         logger.info("Logout for user '%s'", safe_for_log(current_user))
         end_session()
         st.rerun()
 
-st.write("Predict the **semester exam score (out of 100)** from internal marks, "
-         "assignment, study hours and attendance.")
+ui.hero()
 
 try:
     df = load_data()
@@ -238,6 +255,24 @@ except Exception:
     logger.exception("Data could not be loaded")
     st.error(FRIENDLY_ERROR)
     st.stop()
+
+# ---------- Dashboard cards ----------
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("👩‍🎓 Students", len(df))
+if is_admin:
+    k2.metric("📈 Class average", f"{df['semester_score'].mean():.1f} / 100")
+    k3.metric("⚠️ At risk (< 60)",
+              sum(p < 60 for p in predictor.predict_many(df)))
+    chain_ok = audit.verify()[0] and predictor.model_status() != "tampered"
+    k4.metric("🛡️ Security status", "All checks OK" if chain_ok else "Attention")
+else:
+    dp_means, _, _ = get_dp_stats(len(df))
+    k2.metric("📈 Class average", f"≈ {dp_means['semester_score']} / 100")
+    last = st.session_state.get("last_prediction")
+    k3.metric("🔮 Your last prediction",
+              f"{last['score']} / 100" if last else "—")
+    k4.metric("🔒 Data protection", "Privacy-protected")
+st.write("")
 
 tab_names = ["🔮 Predict", "📊 Insights"]
 if is_admin:
@@ -247,6 +282,7 @@ tabs = st.tabs(tab_names)
 # ---------- Tab 1: Predict ----------
 with tabs[0]:
     st.subheader("Enter student details")
+    st.caption("Move the sliders, then click Predict.")
     col1, col2 = st.columns(2)
     with col1:
         study_hours = st.slider("Study hours per day", 0.0, 24.0, 5.0, 0.5)
@@ -259,7 +295,7 @@ with tabs[0]:
               "internal1": internal1, "internal2": internal2,
               "assignment": assignment}
 
-    if st.button("Predict semester score"):
+    if st.button("Predict semester score", type="primary"):
         if not get_rate_limiter().allow(st.session_state.get("sid", current_user)):
             log_event("rate_limited")
             st.error("Too many predictions in a short time. Please wait a minute.")
@@ -283,16 +319,31 @@ with tabs[0]:
 
     result = st.session_state.get("last_prediction")
     if result:
-        st.success(f"Predicted semester score: {result['score']} / 100")
+        st.divider()
+        grade, note = ui.grade_for(result["score"])
+        r1, r2, r3 = st.columns([2, 1, 2])
+        r1.metric("Predicted semester score", f"{result['score']} / 100")
+        r2.metric("Grade", grade)
+        r3.metric("Verdict", note)
+        st.progress(min(max(result["score"] / 100, 0.0), 1.0))
+        if result["score"] < 40:
+            st.error("At risk: this student is likely to fail without support.")
+        elif result["score"] < 60:
+            st.info("Below average: more study hours and attendance would help most.")
+        else:
+            st.success(f"Predicted semester score: {result['score']} / 100")
         if result["flagged"]:
             st.warning("⚠️ These inputs look unusual compared with real students. "
                        "The prediction may be unreliable, and this has been logged.")
-        st.markdown("**Why this prediction?** Marks added by each factor "
-                    f"(starting from a base of {result['base']}):")
-        fig, ax = plt.subplots(figsize=(6, 2.8))
-        ax.barh(list(result["contributions"].keys()),
-                list(result["contributions"].values()))
+        st.markdown("##### Why this prediction?")
+        st.caption(f"Marks added by each factor, starting from a base of "
+                   f"{result['base']}.")
+        items = sorted(result["contributions"].items(), key=lambda kv: kv[1])
+        fig, ax = plt.subplots(figsize=(7, 2.8))
+        ax.barh([ui.nice(k) for k, _ in items], [v for _, v in items],
+                color=[ui.POSITIVE if v >= 0 else ui.NEGATIVE for _, v in items])
         ax.set_xlabel("Marks added")
+        ax.grid(axis="y", visible=False)
         st.pyplot(fig)
         pdf = build_pdf(result["inputs"], result["score"], result["contributions"],
                         current_user, result["at"])
@@ -303,16 +354,17 @@ with tabs[0]:
 # ---------- Tab 2: Insights ----------
 with tabs[1]:
     st.subheader("What affects the semester score?")
-    corr = correlations(df)
-    fig, ax = plt.subplots()
-    corr.plot(kind="barh", ax=ax)
+    corr = correlations(df).sort_values()
+    fig, ax = plt.subplots(figsize=(7, 3))
+    ax.barh([ui.nice(k) for k in corr.index], corr.values, color=ui.PRIMARY)
     ax.set_xlabel("Correlation with semester score")
+    ax.grid(axis="y", visible=False)
     st.pyplot(fig)
 
     if is_admin:
         st.subheader("Score distribution (exact)")
-        fig2, ax2 = plt.subplots()
-        ax2.hist(df["semester_score"], bins=10)
+        fig2, ax2 = plt.subplots(figsize=(7, 3))
+        ax2.hist(df["semester_score"], bins=10, color=ui.PRIMARY, edgecolor="white")
         ax2.set_xlabel("Semester score")
         ax2.set_ylabel("Number of students")
         st.pyplot(fig2)
@@ -321,13 +373,15 @@ with tabs[1]:
     else:
         means, counts, edges = get_dp_stats(len(df))
         st.subheader("Score distribution (privacy-protected)")
-        fig2, ax2 = plt.subplots()
-        ax2.bar(edges[:-1], counts, width=edges[1] - edges[0], align="edge")
+        fig2, ax2 = plt.subplots(figsize=(7, 3))
+        ax2.bar(edges[:-1], counts, width=edges[1] - edges[0], align="edge",
+                color=ui.PRIMARY, edgecolor="white")
         ax2.set_xlabel("Semester score")
         ax2.set_ylabel("Number of students (approx.)")
         st.pyplot(fig2)
         st.subheader("Class averages (privacy-protected)")
-        st.dataframe(pd.DataFrame({"Average (approx.)": means}))
+        st.dataframe(pd.DataFrame({"Average (approx.)": {ui.nice(k): v
+                                                          for k, v in means.items()}}))
         st.caption(f"Protected with differential privacy (ε = {EPSILON} per "
                    "statistic): small random noise hides any single student.")
 
